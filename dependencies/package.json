@@ -1,0 +1,27 @@
+{
+  "name": "serverless-poc-dependency-layer",
+  "version": "1.0.0",
+  "description": "Serverless Poc Dependency Layer",
+  "repository": "",
+  "author": "Rushabh Trivedi",
+  "private": true,
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.222.0",
+    "@aws-sdk/client-dynamodb": "^3.47.0",
+    "@aws-sdk/client-eventbridge": "^3.47.0",
+    "@aws-sdk/client-sns": "^3.47.0",
+    "@aws-sdk/util-dynamodb": "^3.47.0",
+    "aws-elasticsearch-connector": "^9.0.0",
+    "aws-xray-sdk": "^3.1.0",
+    "datadog-lambda-js": "^2.25.1",
+    "dd-trace": "^0.21.1",
+    "http-status-codes": "^2.1.4",
+    "lodash": "^4.17.20",
+    "node-require-fallback": "^1.0.0",
+    "ulid": "^2.3.0"
+  },
+  "scripts": {
+    "coverage": "c8 npm test",
+    "test": "mocha tests/"
+  }
+}

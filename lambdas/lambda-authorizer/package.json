@@ -1,0 +1,15 @@
+{
+  "name": "lambda-authorizer",
+  "version": "1.0.0",
+  "description": "The authorizer function",
+  "main": "lambda-authorizer.js",
+  "private": true,
+  "dependencies": {},
+  "scripts": {
+    "test": "mocha tests/"
+  },
+  "devDependencies": {},
+  "files": [
+    "lambda-authorizer.js"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "process-order",
+  "version": "1.0.0",
+  "description": "process order Lambda",
+  "main": "process-order.js",
+  "private": true,
+  "dependencies": {},
+  "scripts": {
+    "test": "mocha tests/"
+  },
+  "devDependencies": {},
+  "files": [
+    "process-order.js"
+  ]
+}

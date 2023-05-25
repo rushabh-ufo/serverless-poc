@@ -1,0 +1,127 @@
+{
+  "Comment": "A state machine to process the order",
+  "StartAt": "Pass",
+  "States": {
+    "Pass": {
+      "Comment": "A Pass state passes its input to its output, without performing work. Pass states are useful when constructing and debugging state machines.",
+      "Type": "Pass",
+      "Next": "Choice"
+    },
+    "Choice": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.detail.isPaymentConfirmed",
+          "BooleanEquals": false,
+          "Next": "ProcessFailedOrder"
+        }
+      ],
+      "Default": "UpdateOrder"
+    },
+    "UpdateOrder": {
+      "Type": "Task",
+      "Resource": "${UpdateItemCommand}",
+      "Parameters": {
+        "TableName": "user",
+        "Key": {
+          "pk": {
+            "S.$": "States.Format('order#{}', $.detail.orderId)"
+          },
+          "sk": {
+            "S.$": "States.Format('order#{}', $.detail.userId)"
+          }
+        },
+        "UpdateExpression": "set #data.#status = :status, #GSI1SK = :GSI1SK",
+        "ExpressionAttributeNames": {
+          "#data": "data",
+          "#status": "status",
+          "#GSI1SK": "GSI1SK"
+        },
+        "ExpressionAttributeValues": {
+          ":status": {
+            "S": "CONFIRM"
+          },
+          ":GSI1SK": {
+            "S": "order#CONFIRM"
+          }
+        }
+      },
+      "Next": "SendEmail",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "SendToDQL"
+        }
+      ]
+    },
+    "ProcessFailedOrder": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${OrderProcessingFailedFunction}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "SendToDQL"
+        }
+      ],
+      "InputPath": "$.detail",
+      "ResultPath": "$.error",
+      "End": true
+    },
+    "SendToDQL": {
+      "Type": "Task",
+      "Resource": "${SQSSendMessage}",
+      "Parameters": {
+        "MessageBody.$": "$",
+        "QueueUrl": "${DLQArn}"
+      },
+      "End": true
+    },
+    "SendEmail": {
+      "Type": "Task",
+      "Parameters": {
+        "Destination": {
+          "ToAddresses": [
+            "rushabhtrivedi@yahoo.com"
+          ]
+        },
+        "Message": {
+          "Body": {
+            "Text": {
+              "Charset": "UTF-8",
+              "Data": "Test Mail"
+            }
+          },
+          "Subject": {
+            "Charset": "UTF-8",
+            "Data": "test mail"
+          }
+        },
+        "Source": "rushabh_ufo@yahoo.com"
+      },
+      "Resource": "${SendSESEmail}",
+      "End": true
+    }
+  }
+}

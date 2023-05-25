@@ -1,0 +1,273 @@
+openapi: 3.0.0
+info:
+  title: Serverless POC API
+  description: Services for the serverless POC
+  version: 1.0.0
+
+servers:
+  - url: https://2f1qof5q1d.execute-api.us-east-1.amazonaws.com/Stage
+    description: dev
+
+tags:
+  - name: serverless-poc
+    description:  Sample API implementation
+
+x-amazon-apigateway-request-validators:
+  Validate body, query string parameters, and headers:
+    validateRequestParameters: true
+    validateRequestBody: true
+x-amazon-apigateway-gateway-responses:
+  BAD_REQUEST_BODY:
+    statusCode: 400
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+    responseTemplates:
+      application/json: '{ "message": "$context.error.validationErrorString" }'
+  UNAUTHORIZED:
+    statusCode: 401
+    responseTemplates:
+      application/json: '{ "message": "Unauthorized" }'
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+  ACCESS_DENIED:
+    statusCode: 401
+    responseTemplates:
+      application/json: '{ "message": "Unauthorized" }'
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      
+paths:
+  /user/add:
+    post:
+      summary: Create user
+      tags:
+        - serverless-POC
+      parameters:
+        - $ref: '#/components/parameters/authorization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserModel'
+      responses:
+        200:
+          description: The request succeeded and requested results have been returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Success'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        415:
+          $ref: '#/components/responses/UnsupportedType'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-request-validator: Validate body, query string parameters, and headers
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AddUserFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+
+  /order/add:
+    post:
+      summary: Create order
+      tags:
+        - serverless-POC
+      parameters:
+        - $ref: '#/components/parameters/authorization'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderModel'
+      responses:
+        201:
+          description: The request succeeded and requested results have been returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/responses/Created'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        415:
+          $ref: '#/components/responses/UnsupportedType'
+        429:
+          $ref: '#/components/responses/TooManyRequests'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+      x-amazon-apigateway-request-validator: Validate body, query string parameters, and headers
+      x-amazon-apigateway-integration:
+        uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AddOrderFunction.Arn}/invocations
+        httpMethod: POST
+        type: aws_proxy
+
+components:
+  parameters:
+    authorization:
+      name: Authorization
+      in: header
+      description: authorization token
+      schema:
+        type: string
+        example: test_header
+
+  schemas:
+    CreateOrderModel:
+      type: object
+      required:
+        - itemId
+        - quantity
+        - userId
+        - isPaymentConfirmed
+      properties:
+        itemId:
+          type: string
+          example: 1234
+          description: id of the item in the order
+        quantity:
+          type: string
+          examlpe: 10
+          description: Quantity of the item in the order
+        userId:
+          type: string
+          example: user123
+          description: Id of the user making order
+        isPaymentConfirmed:
+          type: boolean
+          example: true
+          description: status to show if the payment is confirmed or not
+
+    CreateUserModel:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - email
+        - mobileNo
+        - address
+      properties:
+        firstName:
+          type: string
+          example: Rushabh
+          description: FirstName of the user
+        lastName:
+          type: string
+          description: LastName of the user
+          example: Trivedi
+        email:
+          type: string
+          description: Email id
+          example: rushabh_ufo@yahoo.com
+        mobileNo:
+          type: string
+          description: Mobile number
+          example: 231231231
+        address:
+          type: string
+          description: address for the user
+          example: test address
+        
+    Success:
+      type: object
+      description: Success message
+      properties:
+        result:
+          type: string
+          description: result status
+          example: OK
+    Error:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Details of the error that occurred
+          example: The request type provided in the message is invalid.
+
+  responses:
+    Created: #201
+      description: The request succeeded and created a new resource.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              id:
+                type: string
+            required:
+              - id
+    Accepted: #202
+      description: The request succeeded.
+    NoContent: #204
+      description: The request succeeded.
+    NoContentUpdate: #204
+      description: The request succeeded and updated an existing resource.
+    NoContentDelete: #204
+      description: The request finished processing and the resource was removed or did not exist.
+    BadRequest: #400
+      description: The request could not be fulfilled due to validation errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized: #401
+      description: The request requires authentication.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden: #403
+      description: Access is not authorized.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound: #404
+      description: The requested resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict: #409
+      description: A resource of with the same key already exists.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnsupportedType: #415
+      description: This API only supports a Content-Type of application/json.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooManyRequests: #429
+      description: The user has sent too many requests in a given amount of time and should retry the request later.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError: #500
+      description: The server encountered an unexpected condition which prevented it from fulfilling the request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

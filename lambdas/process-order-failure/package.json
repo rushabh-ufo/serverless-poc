@@ -1,0 +1,15 @@
+{
+  "name": "process-order-failure",
+  "version": "1.0.0",
+  "description": "Process failed order",
+  "main": "process-order-failure.js",
+  "private": true,
+  "dependencies": {},
+  "scripts": {
+    "test": "mocha tests/"
+  },
+  "devDependencies": {},
+  "files": [
+    "process-order-failure.js"
+  ]
+}
