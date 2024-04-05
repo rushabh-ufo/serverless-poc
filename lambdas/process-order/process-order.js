@@ -7,6 +7,8 @@ const shared = requireWithFallback('/opt/nodejs/serverless-poc-shared', '../../d
 
 exports.UNHANDLED_ERROR_MESSAGE = 'Something went wrong.';
 
+
+
 exports.sqsHandler = async (event) => {
   try {
     console.log('Event: ', JSON.stringify(event));
