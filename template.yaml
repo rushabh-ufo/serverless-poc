@@ -27,7 +27,7 @@ Parameters:
 Globals:
   Function:
     Timeout: 10
-    Runtime: nodejs14.x
+    Runtime: nodejs18.x
     MemorySize: 768
     Layers:
       - !Ref ServerlessPOCDependencyLayer
@@ -92,12 +92,12 @@ Resources:
   ServerlessPOCDependencyLayer:
     Type: AWS::Serverless::LayerVersion
     Metadata:
-      BuildMethod: nodejs14.x
+      BuildMethod: nodejs18.x
     Properties:
       LayerName: serverless-poc-dependency-layer
       ContentUri: dependencies/
       CompatibleRuntimes:
-        - nodejs14.x
+        - nodejs18.x
       RetentionPolicy: Retain
 
   ServerlessPOCAPI:
@@ -127,7 +127,7 @@ Resources:
     Properties:
       CodeUri: hello-world/
       Handler: app.lambdaHandler
-      Runtime: nodejs14.x
+      Runtime: nodejs18.x
       Architectures:
         - x86_64
       Events:
@@ -357,7 +357,7 @@ Resources:
           - Sid: Allow administration of the key
             Effect: Allow
             Principal:
-              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:user/rushabh_ufo
+              AWS: arn:aws:iam::220897588425:user/rushabh.trivedi
             Action:
               - 'kms:Create*'
               - 'kms:Describe*'
@@ -447,7 +447,7 @@ Resources:
           - Sid: Allow administration of the key
             Effect: Allow
             Principal:
-              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:user/rushabh_ufo
+              AWS: arn:aws:iam::220897588425:user/rushabh.trivedi
             Action:
               - 'kms:Create*'
               - 'kms:Describe*'
@@ -637,7 +637,83 @@ Resources:
         DLQArn: !Sub https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/OrderProcessingFailedDLQ
         SQSSendMessage: arn:aws:states:::sqs:sendMessage
 
+  DocumentUploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: document-upload-bucket-rushabh-trivedi
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: Document Upload Bucket
 
+  DocumentBucketSQSPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !GetAtt DocumentUploadBucket.Arn
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - s3.amazonaws.com
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+            Resource: !GetAtt DocumentUploadProcessingSQSQueue.Arn
+            Condition:
+              ArnLike:
+                aws:SourceArn: !GetAtt DocumentUploadBucket.Arn
+        
+
+  DocumentUploadProcessingSQSQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: DocumentUploadProcessingSQSQueue
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DocumentUploadProcessingSQSQueueDLQ.Arn
+        maxReceiveCount: 5
+
+  DocumentUploadProcessingSQSQueueDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: DocumentUploadProcessingSQSQueueDLQ
+
+  DocumentUploadProcessSQSPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref DocumentUploadProcessingSQSQueue
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - s3.amazonaws.com
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+            Resource: !GetAtt DocumentUploadProcessingSQSQueue.Arn
+            Condition:
+              ArnLike:
+                aws:SourceArn: !GetAtt DocumentUploadBucket.Arn
 
 Outputs:
   # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function

@@ -1,0 +1,863 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'sam-app
+
+  Sample SAM Template for sam-app
+
+  '
+Parameters:
+  EnvironmentType:
+    Type: String
+    Default: sandbox
+    Description: Stage for the deployment
+    AllowedValues:
+    - sandbox
+    - uat
+  TableName:
+    Type: String
+    Default: user
+  AuditTableName:
+    Type: String
+    Default: Audit
+  GSI1Name:
+    Type: String
+    Default: GSI1
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: nodejs18.x
+    MemorySize: 768
+    Layers:
+    - Ref: ServerlessPOCDependencyLayer
+  Api:
+    Cors:
+      AllowMethods: '''DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'''
+      AllowHeaders: '''Role,Authorization,Content-Type'''
+      AllowOrigin: '''*'''
+Resources:
+  ServerlessPOCAuthorizer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ServerlessPOCAuthorizer
+      Handler: /opt/nodejs/node_modules/datadog-lambda-js/dist/handler.handler
+      Role:
+        Fn::GetAtt:
+        - ServerlessPOCAuthorizerRole
+        - Arn
+      Environment:
+        Variables:
+          DD_LAMBDA_HANDLER: lambda-authorizer.handler
+    Metadata:
+      SamResourceId: ServerlessPOCAuthorizer
+  ServerlessPOCAuthorizerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      ManagedPolicyArns:
+      - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  ServerlessPOCAuthorizerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - sts:AssumeRole
+          Principal:
+            Service:
+            - apigateway.amazonaws.com
+      ManagedPolicyArns:
+      - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: LambdaInvokeAuth
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - lambda:InvokeFunction
+            Resource:
+              Fn::GetAtt:
+              - ServerlessPOCAuthorizer
+              - Arn
+  ServerlessPOCDependencyLayer:
+    Type: AWS::Serverless::LayerVersion
+    Metadata:
+      BuildMethod: nodejs18.x
+      SamResourceId: ServerlessPOCDependencyLayer
+    Properties:
+      LayerName: serverless-poc-dependency-layer
+      ContentUri: ServerlessPOCDependencyLayer
+      CompatibleRuntimes:
+      - nodejs18.x
+      RetentionPolicy: Retain
+  ServerlessPOCAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName:
+        Ref: EnvironmentType
+      TracingEnabled: true
+      Auth:
+        DefaultAuthorizer: ServerlessPOCAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          ServerlessPOCAuthorizer:
+            FunctionPayloadType: REQUEST
+            FunctionArn:
+              Fn::GetAtt:
+              - ServerlessPOCAuthorizer
+              - Arn
+            FunctionInvokeRole:
+              Fn::GetAtt:
+              - ServerlessPOCAuthorizerExecutionRole
+              - Arn
+            Identity:
+              Headers:
+              - Authorization
+      DefinitionBody:
+        Fn::Transform:
+          Name: AWS::Include
+          Parameters:
+            Location: ..\..\serverless-poc-openapi.yaml
+  HelloWorldFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: HelloWorldFunction
+      Handler: app.lambdaHandler
+      Runtime: nodejs18.x
+      Architectures:
+      - x86_64
+      Events:
+        HelloWorld:
+          Type: Api
+          Properties:
+            Path: /hello
+            Method: get
+    Metadata:
+      SamResourceId: HelloWorldFunction
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Ref: TableName
+      SSESpecification:
+        KMSMasterKeyId:
+          Fn::GetAtt:
+          - ServerlessPOCddbEncryptionKey
+          - Arn
+        SSEEnabled: true
+        SSEType: KMS
+      AttributeDefinitions:
+      - AttributeName: pk
+        AttributeType: S
+      - AttributeName: sk
+        AttributeType: S
+      - AttributeName: GSI1PK
+        AttributeType: S
+      - AttributeName: GSI1SK
+        AttributeType: S
+      GlobalSecondaryIndexes:
+      - IndexName:
+          Ref: GSI1Name
+        KeySchema:
+        - AttributeName: GSI1PK
+          KeyType: HASH
+        - AttributeName: GSI1SK
+          KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
+        ProvisionedThroughput:
+          ReadCapacityUnits: 5
+          WriteCapacityUnits: 5
+      KeySchema:
+      - AttributeName: pk
+        KeyType: HASH
+      - AttributeName: sk
+        KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+  AuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Ref: AuditTableName
+      SSESpecification:
+        KMSMasterKeyId:
+          Fn::GetAtt:
+          - ServerlessPOCddbEncryptionKey
+          - Arn
+        SSEEnabled: true
+        SSEType: KMS
+      AttributeDefinitions:
+      - AttributeName: pk
+        AttributeType: S
+      - AttributeName: sk
+        AttributeType: S
+      - AttributeName: GSI1PK
+        AttributeType: S
+      - AttributeName: GSI1SK
+        AttributeType: S
+      GlobalSecondaryIndexes:
+      - IndexName:
+          Ref: GSI1Name
+        KeySchema:
+        - AttributeName: GSI1PK
+          KeyType: HASH
+        - AttributeName: GSI1SK
+          KeyType: RANGE
+        Projection:
+          ProjectionType: ALL
+        ProvisionedThroughput:
+          ReadCapacityUnits: 5
+          WriteCapacityUnits: 5
+      KeySchema:
+      - AttributeName: pk
+        KeyType: HASH
+      - AttributeName: sk
+        KeyType: RANGE
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+  StreamFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: StreamFunction
+      Handler: /opt/nodejs/node_modules/datadog-lambda-js/dist/handler.handler
+      Environment:
+        Variables:
+          DD_LAMBDA_HANDLER: stream-function.lambdaHandler
+          DLQArn:
+            Fn::Sub: https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/StreamProcessorDLQ
+          TABLE_NAME:
+            Ref: AuditTableName
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSXRayDaemonWriteAccess
+      - Ref: ServerlessPOCddbEncryptionKeyManagedPolicy
+      - Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - dynamodb:DescribeStream
+          - dynamodb:GetRecords
+          - dynamodb:GetShardIterator
+          - dynamodb:ListStreams
+          - dynamodb:ListShards
+          Resource:
+            Fn::Join:
+            - ''
+            - - Fn::GetAtt:
+                - DataTable
+                - Arn
+              - /stream/*
+        - Effect: Allow
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - StreamProcessorDLQ
+            - Arn
+        - Effect: Allow
+          Action:
+          - dynamodb:PutItem
+          Resource:
+            Fn::GetAtt:
+            - AuditTable
+            - Arn
+    Metadata:
+      SamResourceId: StreamFunction
+  DynamoDBStreamEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+        - StreamFunction
+        - Arn
+      EventSourceArn:
+        Fn::GetAtt:
+        - DataTable
+        - StreamArn
+      StartingPosition: TRIM_HORIZON
+      DestinationConfig:
+        OnFailure:
+          Destination:
+            Fn::GetAtt:
+            - StreamProcessorDLQ
+            - Arn
+      BatchSize: 1
+      MaximumBatchingWindowInSeconds: 5
+      MaximumRecordAgeInSeconds: 604800
+      MaximumRetryAttempts: 5
+  StreamProcessorDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: StreamProcessorDLQ
+      MessageRetentionPeriod: 1209600
+      KmsMasterKeyId:
+        Fn::GetAtt:
+        - ServerlessPOCSQSEncryptionKey
+        - Arn
+  AddUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: AddUserFunction
+      Handler: /opt/nodejs/node_modules/datadog-lambda-js/dist/handler.handler
+      Events:
+        AddUserEvent:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ServerlessPOCAPI
+            Path: /user/add
+            Method: post
+      Environment:
+        Variables:
+          DD_LAMBDA_HANDLER: add-user.lambdaHandler
+          TABLE_NAME:
+            Ref: TableName
+          GSI1_NAME:
+            Ref: GSI1Name
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSXRayDaemonWriteAccess
+      - Ref: ServerlessPOCddbEncryptionKeyManagedPolicy
+      - Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action: dynamodb:PutItem
+          Resource:
+            Fn::GetAtt:
+            - DataTable
+            - Arn
+        - Effect: Allow
+          Action: dynamodb:Query
+          Resource:
+            Fn::Join:
+            - /
+            - - Fn::GetAtt:
+                - DataTable
+                - Arn
+              - index
+              - Ref: GSI1Name
+    Metadata:
+      SamResourceId: AddUserFunction
+  OrderProcessingSQSQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 86000
+      VisibilityTimeout: 60
+      QueueName: OrderProcessingSQSQueue
+      KmsMasterKeyId:
+        Fn::GetAtt:
+        - ServerlessPOCSQSEncryptionKey
+        - Arn
+  OrderProcessingFailedDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 86000
+      VisibilityTimeout: 60
+      QueueName: OrderProcessingFailedDLQ
+      KmsMasterKeyId:
+        Fn::GetAtt:
+        - ServerlessPOCSQSEncryptionKey
+        - Arn
+  EngineerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS:
+              Fn::Sub: ${AWS::AccountId}
+          Action:
+          - sts:AssumeRole
+      Path: /
+      RoleName: Engineer
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AdministratorAccess
+  ServerlessPOCSQSEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for the SQS
+      Enabled: true
+      EnableKeyRotation: false
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+        - Sid: Enable IAM User Permissions
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Sub: arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+          Action: kms:*
+          Resource: '*'
+        - Sid: Allow administration of the key
+          Effect: Allow
+          Principal:
+            AWS: arn:aws:iam::220897588425:user/rushabh.trivedi
+          Action:
+          - kms:Create*
+          - kms:Describe*
+          - kms:Enable*
+          - kms:List*
+          - kms:Put*
+          - kms:Update*
+          - kms:Revoke*
+          - kms:Disable*
+          - kms:Get*
+          - kms:Delete*
+          - kms:ScheduleKeyDeletion
+          - kms:CancelKeyDeletion
+          Resource: '*'
+        - Sid: Allow use of the key
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::GetAtt:
+              - EngineerRole
+              - Arn
+          Action:
+          - kms:DescribeKey
+          - kms:Encrypt
+          - kms:Decrypt
+          - kms:ReEncrypt*
+          - kms:GenerateDataKey
+          - kms:GenerateDataKeyWithoutPlaintext
+          Resource: '*'
+        - Sid: Allow AWS services to publish to queue
+          Effect: Allow
+          Principal:
+            Service:
+            - events.amazonaws.com
+            - lambda.amazonaws.com
+            - s3.amazonaws.com
+            - sns.amazonaws.com
+          Action:
+          - kms:Describe*
+          - kms:Get*
+          - kms:List*
+          Resource: '*'
+  ServerlessPOCSQSEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/ServerlessPOCSQSEncryptionKey
+      TargetKeyId:
+        Ref: ServerlessPOCSQSEncryptionKey
+  ServerlessPOCSQSEncryptionKeyProducerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - kms:Decrypt
+          - kms:GenerateDataKey*
+          Resource:
+            Fn::GetAtt:
+            - ServerlessPOCSQSEncryptionKey
+            - Arn
+  ServerlessPOCSQSEncryptionKeyConsumerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - kms:Decrypt
+          Resource:
+            Fn::GetAtt:
+            - ServerlessPOCSQSEncryptionKey
+            - Arn
+  ServerlessPOCddbEncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for the dynamo table
+      Enabled: true
+      EnableKeyRotation: false
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+        - Sid: Enable IAM User Permissions
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::Sub: arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+          Action: kms:*
+          Resource: '*'
+        - Sid: Allow administration of the key
+          Effect: Allow
+          Principal:
+            AWS: arn:aws:iam::220897588425:user/rushabh.trivedi
+          Action:
+          - kms:Create*
+          - kms:Describe*
+          - kms:Enable*
+          - kms:List*
+          - kms:Put*
+          - kms:Update*
+          - kms:Revoke*
+          - kms:Disable*
+          - kms:Get*
+          - kms:Delete*
+          - kms:ScheduleKeyDeletion
+          - kms:CancelKeyDeletion
+          Resource: '*'
+        - Sid: Allow use of the key
+          Effect: Allow
+          Principal:
+            AWS:
+              Fn::GetAtt:
+              - EngineerRole
+              - Arn
+          Action:
+          - kms:DescribeKey
+          - kms:Encrypt
+          - kms:Decrypt
+          - kms:ReEncrypt*
+          - kms:GenerateDataKey
+          - kms:GenerateDataKeyWithoutPlaintext
+          Resource: '*'
+        - Sid: Allow DynamoDB to get information about the CMK
+          Effect: Allow
+          Principal:
+            Service:
+            - dynamodb.amazonaws.com
+          Action:
+          - kms:Describe*
+          - kms:Get*
+          - kms:List*
+          Resource: '*'
+  ServerlessPOCddbEncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/ServerlessPOCDDBCMK
+      TargetKeyId:
+        Ref: ServerlessPOCddbEncryptionKey
+  ServerlessPOCddbEncryptionKeyManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - kms:GenerateDataKey*
+          - kms:Decrypt
+          Resource:
+            Fn::GetAtt:
+            - ServerlessPOCddbEncryptionKey
+            - Arn
+  AddOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: AddOrderFunction
+      Handler: /opt/nodejs/node_modules/datadog-lambda-js/dist/handler.handler
+      Events:
+        AddOrderEvent:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: ServerlessPOCAPI
+            Path: /order/add
+            Method: post
+      Environment:
+        Variables:
+          DD_LAMBDA_HANDLER: add-order.lambdaHandler
+          TABLE_NAME:
+            Ref: TableName
+          REGION: us-east-1
+          ORDER_SQS_URL:
+            Fn::Sub: https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/OrderProcessingSQSQueue
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSXRayDaemonWriteAccess
+      - Ref: ServerlessPOCddbEncryptionKeyManagedPolicy
+      - Ref: ServerlessPOCSQSEncryptionKeyProducerPolicy
+      - Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Resource:
+            Fn::GetAtt:
+            - DataTable
+            - Arn
+          Action:
+          - dynamodb:PutItem
+        - Effect: Allow
+          Action: sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - OrderProcessingSQSQueue
+            - Arn
+    Metadata:
+      SamResourceId: AddOrderFunction
+  ProcessOrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ProcessOrderFunction
+      Handler: /opt/nodejs/node_modules/datadog-lambda-js/dist/handler.handler
+      Events:
+        ProcessOrderEvent:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+              - OrderProcessingSQSQueue
+              - Arn
+            BatchSize: 1
+      Environment:
+        Variables:
+          DD_LAMBDA_HANDLER: process-order.sqsHandler
+          REGION: us-east-1
+          ORDER_SQS_URL:
+            Fn::Sub: https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/OrderProcessingSQSQueue
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSXRayDaemonWriteAccess
+      - Ref: ServerlessPOCSQSEncryptionKeyConsumerPolicy
+      - Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - sqs:ReadMessage
+          - sqs:GetQueueAttributes
+          Resource:
+            Fn::GetAtt:
+            - OrderProcessingSQSQueue
+            - Arn
+        - Effect: Allow
+          Action:
+          - events:PutEvents
+          Resource:
+            Fn::Sub: arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default
+    Metadata:
+      SamResourceId: ProcessOrderFunction
+  ProcessOrderFailedStepFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ProcessOrderFailedStepFunction
+      Handler: /opt/nodejs/node_modules/datadog-lambda-js/dist/handler.handler
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - AWSXRayDaemonWriteAccess
+      - Ref: ServerlessPOCddbEncryptionKeyManagedPolicy
+      - Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Resource:
+            Fn::GetAtt:
+            - DataTable
+            - Arn
+          Action:
+          - dynamodb:UpdateItem
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: DataTable
+          DD_LAMBDA_HANDLER: process-order-failure.stepFunctionHandler
+    Metadata:
+      SamResourceId: ProcessOrderFailedStepFunction
+  OrderProcessingStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: ..\..\state-machines\process-order\process-order.asl.json
+      Policies:
+      - AWSLambdaBasicExecutionRole
+      - Ref: ServerlessPOCddbEncryptionKeyManagedPolicy
+      - Ref: ServerlessPOCSQSEncryptionKeyProducerPolicy
+      - Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - dynamodb:PutItem
+          - dynamodb:UpdateItem
+          Resource:
+            Fn::GetAtt:
+            - DataTable
+            - Arn
+        - Effect: Allow
+          Action:
+          - ses:SendEmail
+          - ses:SendRowEmail
+          Resource: '*'
+        - Effect: Allow
+          Action:
+          - lambda:InvokeFunction
+          Resource:
+            Fn::GetAtt:
+            - ProcessOrderFailedStepFunction
+            - Arn
+        - Effect: Allow
+          Action:
+          - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+            - OrderProcessingFailedDLQ
+            - Arn
+      Events:
+        ProcessOrderEvent:
+          Type: EventBridgeRule
+          Properties:
+            Pattern:
+              detail-type:
+              - order-placed
+            DeadLetterConfig:
+              Arn:
+                Fn::GetAtt:
+                - OrderProcessingFailedDLQ
+                - Arn
+      DefinitionSubstitutions:
+        PutItemCommand:
+          Fn::Sub: arn:${AWS::Partition}:states:::aws-sdk:dynamodb:putItem
+        UpdateItemCommand:
+          Fn::Sub: arn:${AWS::Partition}:states:::aws-sdk:dynamodb:updateItem
+        TableName:
+          Ref: TableName
+        OrderProcessingFailedFunction:
+          Fn::GetAtt:
+          - ProcessOrderFailedStepFunction
+          - Arn
+        SendSESEmail: arn:aws:states:::aws-sdk:ses:sendEmail
+        DLQArn:
+          Fn::Sub: https://sqs.${AWS::Region}.amazonaws.com/${AWS::AccountId}/OrderProcessingFailedDLQ
+        SQSSendMessage: arn:aws:states:::sqs:sendMessage
+  DocumentUploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: document-upload-bucket-rushabh-trivedi
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      # NotificationConfiguration:
+      #   QueueConfigurations:
+      #   - Event: s3:ObjectCreated:*
+      #     Queue:
+      #       Fn::GetAtt:
+      #       - DocumentUploadProcessingSQSQueue
+      #       - Arn
+      #     Filter:
+      #       S3Key:
+      #         Rules:
+      #         - Name: prefix
+      #           Value: /images
+      Tags:
+      - Key: Name
+        Value: Document Upload Bucket
+  DocumentBucketSQSPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Fn::GetAtt:
+        - DocumentUploadBucket
+        - Arn
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - s3.amazonaws.com
+          Action:
+          - sqs:SendMessage
+          - sqs:ReceiveMessage
+          - sqs:DeleteMessage
+          - sqs:GetQueueAttributes
+          - sqs:GetQueueUrl
+          Resource:
+            Fn::GetAtt:
+            - DocumentUploadProcessingSQSQueue
+            - Arn
+          Condition:
+            ArnLike:
+              aws:SourceArn:
+                Fn::GetAtt:
+                - DocumentUploadBucket
+                - Arn
+  DocumentUploadProcessingSQSQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: DocumentUploadProcessingSQSQueue
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn:
+          Fn::GetAtt:
+          - DocumentUploadProcessingSQSQueueDLQ
+          - Arn
+        maxReceiveCount: 5
+  DocumentUploadProcessingSQSQueueDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: DocumentUploadProcessingSQSQueueDLQ
+  DocumentUploadProcessSQSPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+      - Ref: DocumentUploadProcessingSQSQueue
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - s3.amazonaws.com
+          Action:
+          - sqs:SendMessage
+          - sqs:ReceiveMessage
+          - sqs:DeleteMessage
+          - sqs:GetQueueAttributes
+          - sqs:GetQueueUrl
+          Resource:
+            Fn::GetAtt:
+            - DocumentUploadProcessingSQSQueue
+            - Arn
+          Condition:
+            ArnLike:
+              aws:SourceArn:
+                Fn::GetAtt:
+                - DocumentUploadBucket
+                - Arn
+Outputs:
+  HelloWorldApi:
+    Description: API Gateway endpoint URL for Prod stage for Hello World function
+    Value:
+      Fn::Sub: https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/
+  HelloWorldFunction:
+    Description: Hello World Lambda Function ARN
+    Value:
+      Fn::GetAtt:
+      - HelloWorldFunction
+      - Arn
+  HelloWorldFunctionIamRole:
+    Description: Implicit IAM Role created for Hello World function
+    Value:
+      Fn::GetAtt:
+      - HelloWorldFunctionRole
+      - Arn

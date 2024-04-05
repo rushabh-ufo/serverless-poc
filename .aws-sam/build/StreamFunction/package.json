@@ -1,0 +1,15 @@
+{
+  "name": "stream-function",
+  "version": "1.0.0",
+  "description": "Stream function lambda",
+  "main": "stream-function.js",
+  "private": true,
+  "dependencies": {},
+  "scripts": {
+    "test": "mocha tests/"
+  },
+  "devDependencies": {},
+  "files": [
+    "stream-function.js"
+  ]
+}

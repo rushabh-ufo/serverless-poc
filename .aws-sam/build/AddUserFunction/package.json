@@ -1,0 +1,15 @@
+{
+  "name": "add-user",
+  "version": "1.0.0",
+  "description": "Add user Lambda",
+  "main": "add-user.js",
+  "private": true,
+  "dependencies": {},
+  "scripts": {
+    "test": "mocha tests/"
+  },
+  "devDependencies": {},
+  "files": [
+    "add-user.js"
+  ]
+}
